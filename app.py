@@ -1,117 +1,40 @@
-import langchain
-
-# Load & process
-from langchain.document_loaders import DirectoryLoader, PyPDFLoader
-from langchain.text_splitter import TokenTextSplitter
-
-# Vector store & embeddings
-from langchain.vectorstores import Chroma
-from langchain.embeddings import OpenAIEmbeddings
-
-# Conversations
-from langchain.prompts import ChatPromptTemplate, PromptTemplate
+from langchain.callbacks.base import BaseCallbackHandler
 from langchain.chat_models import ChatOpenAI
-from langchain.chains import LLMChain
-from langchain.prompts import (
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    MessagesPlaceholder,
-    SystemMessagePromptTemplate,
-)
-from langchain.memory import ConversationBufferMemory
-from langchain.output_parsers.json import SimpleJsonOutputParser
-from langchain.llms import OpenAI
-
-# Post-processing
-import fitz
-
-# Token counter
-import tiktoken
-encoder = tiktoken.encoding_for_model("text-embedding-ada-002")
-from langchain.callbacks.manager import get_openai_callback
-
-# For app
+from langchain.schema import ChatMessage
 import streamlit as st
 
-# Utils
-from utils import *
-import PyPDF2
 
-# ========================================
-# Hyperparameters
-# ========================================
+class StreamHandler(BaseCallbackHandler):
+    def __init__(self, container, initial_text=""):
+        self.container = container
+        self.text = initial_text
 
-SALDO = 10000
+    def on_llm_new_token(self, token: str, **kwargs) -> None:
+        self.text += token
+        self.container.markdown(self.text)
 
-
-
-
-# ========================================
-# App
-# ========================================
 
 with st.sidebar:
-    st.write("Sisa Saldo")
-    st.success(f"**{format_rupiah(SALDO)}**")
-    uploaded_file = st.file_uploader("Upload PDF(s)", type=("pdf")) 
+    uploaded_files = st.file_uploader(
+    label="Upload PDF files", type=["pdf"], accept_multiple_files=True
+    )
 
-st.title("Chatbot") 
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "How can I help you?"}]
-
+    st.session_state["messages"] = [ChatMessage(role="assistant", content="How can I help you?")]
 
 for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
+    st.chat_message(msg.role).write(msg.content)
 
 if prompt := st.chat_input():
-    # ========================================
-    # Langchain process
-    # ========================================
-    if uploaded_file:
-        # Load PDF
-        st.write(uploaded_file)
-        loader = PyPDFLoader(uploaded_file.name)
-        st.write(dir(loader))
-        docs = loader.load()
+    st.session_state.messages.append(ChatMessage(role="user", content=prompt))
+    st.chat_message("user").write(prompt)
 
-        # Split into chunks
-        text_splitter = TokenTextSplitter(
-            chunk_size = 1000,
-            chunk_overlap  = 200
-        )
+    if not uploaded_files:
+        st.info("Please upload PDF documents to continue.")
+        st.stop()
 
-        chunks = text_splitter.split_documents(docs)
-
-        # Create embeddings from chunks
-        embeddings = OpenAIEmbeddings()
-        docsearch = Chroma.from_documents(chunks, embeddings)
-
-        # LLM
-        chat_model = ChatOpenAI()
-
-        # Prompt
-        prompt = ChatPromptTemplate(
-            messages=[
-                SystemMessagePromptTemplate.from_template(
-                    "You are a nice chatbot having a conversation with a human."
-                ),
-                MessagesPlaceholder(variable_name="chat_history"),
-                HumanMessagePromptTemplate.from_template(template),
-            ]
-        )
-
-        # Memory
-        memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-
-        # Chain
-        json_parser = SimpleJsonOutputParser()
-        chain = prompt | chat_model | json_parser
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        st.chat_message("user").write(prompt)
-        response = "response"
-        st.session_state.messages.append(msg)
-        st.chat_message("assistant").write(response)
-        with st.expander("Source"):
-            st.write("source")
-    else:
-        st.warning("Upload PDF dulu")
+    with st.chat_message("assistant"):
+        stream_handler = StreamHandler(st.empty())
+        llm = ChatOpenAI(openai_api_key="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", streaming=True, callbacks=[stream_handler])
+        response = llm(st.session_state.messages)
+        st.session_state.messages.append(ChatMessage(role="assistant", content=response.content))
