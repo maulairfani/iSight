@@ -155,7 +155,7 @@ def configure_retriever(uploaded_files):
     splits = text_splitter.split_documents(docs)
 
     # Create embeddings and store in vectordb
-    embeddings = OpenAIEmbeddings(openai_api_key="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")
+    embeddings = OpenAIEmbeddings(openai_api_key=st.secrets["OPEN_API_KEY"])
     vectordb = DocArrayInMemorySearch.from_documents(splits, embeddings)
 
     # Define retriever
@@ -188,7 +188,7 @@ if prompt := st.chat_input():
     with st.chat_message("assistant"):
         contexts = retriever.get_relevant_documents(prompt, k=3)
         stream_handler = StreamHandler(st.empty())
-        chat_model = ChatOpenAI(openai_api_key="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", streaming=True, callbacks=[stream_handler])
+        chat_model = ChatOpenAI(openai_api_key=st.secrets["OPEN_API_KEY"], streaming=True, callbacks=[stream_handler])
         json_parser = SimpleJsonOutputParser()
         chain = prompt_formatted | chat_model | json_parser
         response = chain.invoke({"context": contexts_formatter(contexts), "question": st.session_state.messages, "chat_history": memory.buffer_as_messages})
