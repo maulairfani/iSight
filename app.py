@@ -2,7 +2,8 @@ from langchain.callbacks.base import BaseCallbackHandler
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import ChatMessage
 import streamlit as st
-
+from ragas.metrics import faithfulness, answer_relevancy, context_relevancy
+from ragas.langchain import RagasEvaluatorChain
 import langchain
 
 # Load & process
@@ -43,6 +44,9 @@ from langchain.callbacks.manager import get_openai_callback
 from nltk.translate.bleu_score import sentence_bleu
 from nltk.translate.bleu_score import SmoothingFunction
 from rouge_score import rouge_scorer
+import os
+os.environ["OPENAI_API_KEY"] = st.secrets["OPEN_API_KEY"]
+
 
 
 # ======================================
@@ -180,6 +184,7 @@ for msg in st.session_state.messages:
 if prompt := st.chat_input():
     st.session_state.messages.append(ChatMessage(role="user", content=prompt))
     st.chat_message("user").write(prompt)
+    query = prompt
 
     if not uploaded_files:
         st.info("Please upload PDF documents to continue.")
@@ -206,13 +211,42 @@ if prompt := st.chat_input():
         # Compute MMR
         # mrr = calculate_mean_reciprocal_rank([reference], [candidate])
 
-        # Display BLEU and ROUGE scores in the sidebar
+        # === Display BLEU and ROUGE scores in the sidebar ====
         st.sidebar.write("\n")
-        st.sidebar.write(f"BLEU Score: {bleu_score:.4f}")
-        st.sidebar.write(f"ROUGE-1 Score: {rouge_scores['rouge1'].fmeasure:.4f}")
-        st.sidebar.write(f"ROUGE-2 Score: {rouge_scores['rouge2'].fmeasure:.4f}")
-        st.sidebar.write(f"ROUGE-L Score: {rouge_scores['rougeL'].fmeasure:.4f}")
+        # st.sidebar.write(f"BLEU Score: {bleu_score:.4f}")
+        # st.sidebar.write(f"ROUGE-1 Score: {rouge_scores['rouge1'].fmeasure:.4f}")
+        # st.sidebar.write(f"ROUGE-2 Score: {rouge_scores['rouge2'].fmeasure:.4f}")
+        # st.sidebar.write(f"ROUGE-L Score: {rouge_scores['rougeL'].fmeasure:.4f}")
         # st.sidebar.write(f"MRR Score: {mrr:.4f}")
+
+        eval_dict = {'source_documents': contexts, 'query': query, 'result': candidate}
+
+        st.sidebar.write("**Retrieval Evaluation**")
+        # RETRIEVAL EVAL
+        eval_retrieve = {
+            m.name: RagasEvaluatorChain(metric=m) 
+            for m in [context_relevancy]
+        }
+
+        for name, eval_retrieve in eval_retrieve.items():   
+            score_name = f"{name}_score"
+            st.sidebar.write(f"{score_name}: {eval_retrieve(eval_dict)[score_name]}")       
+
+        st.sidebar.write('\n ')
+        st.sidebar.write('\n ')
+
+        st.sidebar.write("**Text-Generation Evaluation**")
+        # GENERATION EVAL
+        eval_generate = {
+            n.name: RagasEvaluatorChain(metric=n) 
+            for n in [faithfulness, answer_relevancy]
+
+        }
+        for name, eval_generate in eval_generate.items():   
+            score_name = f"{name}_score"
+            st.sidebar.write(f"{score_name}: {eval_generate(eval_dict)[score_name]}")
+
+            
 
         st.session_state.messages.append(ChatMessage(role="assistant", content=response["answer"]))
         with st.expander("Reference"):
