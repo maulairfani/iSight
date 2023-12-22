@@ -35,6 +35,8 @@ from langchain.llms import OpenAI
 # Post-processing
 import fitz
 import webbrowser
+from PIL import Image
+
 
 # Token counter
 import tiktoken
@@ -124,6 +126,19 @@ prompt_formatted = ChatPromptTemplate(
 
 # memory
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+
+def has_highlighted_text(page):
+    # Check if the page has any highlighted annotations
+    return any(annot.type[0] == 8 for annot in page.annots())
+
+def highlight_text_in_pdf(pdf_document, text_to_highlight):
+    for page_num in range(pdf_document.page_count):
+        page = pdf_document[page_num]
+        text_instances = page.search_for(text_to_highlight, hit_max=1)
+
+        for text_instance in text_instances:
+            page.add_highlight_annot(text_instance)
+
 
 
 # ======================================
@@ -215,6 +230,7 @@ if prompt := st.chat_input():
         # st.sidebar.write(f"MRR Score: {mrr:.4f}")
 
         st.session_state.messages.append(ChatMessage(role="assistant", content=response["answer"]))
+
         with st.expander("Reference"):
             in_text_citation = response["in-text citation"]
             
@@ -257,3 +273,15 @@ if prompt := st.chat_input():
                         st.write("Citation not found in the PDF.")
                 except ValueError:
                     st.write("Invalid citation format.")
+
+        with st.expander("PDF Page"):
+            pdf_document = fitz.open(uploaded_files[0])
+            source_text = response["source"]
+            if source_text:
+                highlight_text_in_pdf(pdf_document, source_text)
+                for page_num in range(pdf_document.page_count):
+                    page = pdf_document[page_num]
+                    if has_highlighted_text(page):
+                        pixmap = page.get_pixmap()
+                        pil_image = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
+                        st.image(pil_image, caption=f"Page {page_num + 1}")
