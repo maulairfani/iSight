@@ -12,11 +12,15 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 import tempfile
 import os
 from utils import *
+
+from langchain.document_loaders import PyPDFLoader
+
+
 # import re
 
 
 # Vector store & embeddings
-from langchain.vectorstores import Chroma
+# from langchain.vectorstores import Chroma
 from langchain.vectorstores import DocArrayInMemorySearch
 from langchain.embeddings import OpenAIEmbeddings
 
@@ -145,6 +149,7 @@ def has_highlighted_text(page):
 def highlight_text_in_pdf(pdf_document, text_to_highlight):
     for page_num in range(len(pdf_document)):
         page = pdf_document[page_num]
+        # st.write(dir(page))
         text_instances = page.search_for(text_to_highlight, hit_max=1)
 
         for text_instance in text_instances:
@@ -205,10 +210,9 @@ def embed(uploaded_files):
 
     # Create embeddings and store in vectordb
     embeddings = OpenAIEmbeddings(openai_api_key=st.secrets["OPEN_API_KEY"])
-    docsearch = Chroma.from_documents(splits, embeddings)
+    docsearch = DocArrayInMemorySearch.from_documents(splits, embeddings)
 
     return docsearch
-
 
 def mmr(embed):
     mmr_retriever = embed.as_retriever(search_type="mmr", search_kwargs={"k": 1, "fetch_k": 1})
@@ -261,7 +265,23 @@ with st.sidebar:
     if uploaded_files:
         # for file in uploaded_files:
         #     page_count = get_page_count(uploaded_files)
-        retrieval = embed(uploaded_files)
+        # retrieval = embed(uploaded_files)
+        docs = []
+        temp_dir = tempfile.TemporaryDirectory()
+        for file in uploaded_files:
+            temp_filepath = os.path.join(temp_dir.name, file.name)
+            with open(temp_filepath, "wb") as f:
+                f.write(file.getvalue())
+            loader = PyPDFLoader(temp_filepath)
+            docs.extend(loader.load())
+
+        # Split documents
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        splits = text_splitter.split_documents(docs)
+        # Create embeddings and store in vectordb
+        embeddings = OpenAIEmbeddings(openai_api_key=st.secrets["OPEN_API_KEY"])
+        retrieval = DocArrayInMemorySearch.from_documents(splits, embeddings)
+
 
 
 
@@ -301,18 +321,18 @@ if prompt := st.chat_input():
         question = st.session_state.messages
 
 
-
         # RETRIEVER SELECTION #
         if select_retriever == 0:
-            retrieval = vanilla(retrieval)  
+            contexts = vanilla(retrieval)  
         elif select_retriever == 1:
-            retrieval = contextualcompression(retrieval)
+            contexts = contextualcompression(retrieval)
         elif select_retriever == 2:
-            retrieval = mmr(retrieval)
+            contexts = mmr(retrieval)
         else:
-            retrieval = multiquery(retrieval)
+            contexts = multiquery(retrieval)
 
-        contexts = retrieval.get_relevant_documents(prompt, k=3)
+        # contexts = retrieval.get_relevant_documents(prompt, k=3)
+        # contexts = retrieval[0]
         response = chain.invoke({"context": contexts_formatter(contexts), "question": question, "chat_history": memory.buffer_as_messages})
 
 
@@ -470,10 +490,10 @@ if prompt := st.chat_input():
 
 
 
-            #===== HIGHLIGHT =====#
+            # #===== HIGHLIGHT =====#
             # with st.expander("PDF Page"):
             #     # pdf_document = fitz.open(uploaded_files[0])
-            #     pdf_document = uploaded_file
+            #     pdf_document = docs
             #     source_text = response["source"]
             #     # print("debug0")
             #     if source_text:
