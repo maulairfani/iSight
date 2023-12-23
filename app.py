@@ -258,7 +258,16 @@ class StreamHandler(BaseCallbackHandler):
         self.text += token
         self.container.markdown(self.text)
 
+if "saldo" not in st.session_state:
+    st.session_state.saldo = 10000
+
+
 with st.sidebar:
+
+    st.write("**Saldoku**")
+    saldo_placeholder = st.empty()  
+    saldo_placeholder.write(st.session_state.saldo)
+
     uploaded_files = st.file_uploader(
     label="Upload PDF files", type=["pdf"], accept_multiple_files=True
     )
@@ -336,25 +345,30 @@ if prompt := st.chat_input():
         response = chain.invoke({"context": contexts_formatter(contexts), "question": question, "chat_history": memory.buffer_as_messages})
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        
         # Use 'context' as a reference for scoring
         reference = contexts_formatter(contexts)
         candidate = response["answer"]
+
+
+        # Subtractor
+        curr = CurrencyRates()
+        encoder = tiktoken.encoding_for_model("babbage-002")
+        prmp = prompt_formatted.format(context=contexts_formatter(contexts), question=question, chat_history=memory.buffer_as_messages)
+        output_from_llm=dict_to_string(candidate)
+        input_tokens_used = len(encoder.encode(prmp)) + 7 # Jaga-jaga
+        output_tokens_used = len(encoder.encode(output_from_llm))
+        total_token = input_tokens_used + output_tokens_used
+        input_price = round((0.0015/1000) * input_tokens_used, 8)
+        output_price = round((0.002/1000) * output_tokens_used, 8)
+        total_price_usd = round(input_price + output_price, 8)
+        total_price_idr = curr.convert('USD', 'IDR', total_price_usd)
+        st.session_state.saldo -= total_price_idr
+        saldo_placeholder.text(st.session_state.saldo)
+
+
+
+
         # COSTING
         def get_cost(
                 model="gpt-3.5-turbo", 
@@ -371,6 +385,8 @@ if prompt := st.chat_input():
             output_price = round((0.002/1000) * output_tokens_used, 8)
             total_price_usd = round(input_price + output_price, 8)
             total_price_idr = curr.convert('USD', 'IDR', total_price_usd)
+            saldo = saldo - total_price_idr
+            saldo_placeholder.text(f"**Saldoku: Rp** {saldo}")
 
 
             return f"""Tokens Used: {total_token}
@@ -439,6 +455,7 @@ if prompt := st.chat_input():
             st.sidebar.write('\n ')
             st.sidebar.write('**COST**')
             st.sidebar.write(get_cost())
+
 
         st.session_state.messages.append(ChatMessage(role="assistant", content=response["answer"]))
         if display_references:
