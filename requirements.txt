@@ -257,3 +257,4 @@ rouge_score
 ragas==0.0.22
 Pillow
 docarray
+streamlit_autorefresh
