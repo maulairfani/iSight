@@ -328,7 +328,8 @@ if prompt := st.chat_input():
 
     with st.chat_message("assistant"):
         stream_handler = StreamHandler(st.empty())
-        chat_model = ChatOpenAI(openai_api_key=st.secrets["OPEN_API_KEY"], streaming=True, callbacks=[stream_handler])
+        # chat_model = ChatOpenAI(openai_api_key=st.secrets["OPEN_API_KEY"], streaming=True)#, callbacks=[stream_handler])
+        chat_model = ChatOpenAI(openai_api_key=st.secrets["OPEN_API_KEY"], streaming=True, callbacks=None)
         json_parser = SimpleJsonOutputParser()
         chain = prompt_formatted | chat_model | json_parser
         question = st.session_state.messages
@@ -347,13 +348,15 @@ if prompt := st.chat_input():
         # contexts = retrieval.get_relevant_documents(prompt, k=3)
         # contexts = retrieval[0]
             
-        def invoker(x,y,z):
-            response = chain.invoke({"context": contexts_formatter(x), "question": y, "chat_history": z})
-            return response
+        # def invoker(x,y,z):
+        #     response = chain.invoke({"context": contexts_formatter(x), "question": y, "chat_history": z})
+        #     return response
 
-        response = invoker(contexts,question,memory.buffer_as_messages)
+        # response = invoker(contexts,question,memory.buffer_as_messages)
+
         
-        # response = chain.invoke({"context": contexts_formatter(contexts), "question": question, "chat_history": memory.buffer_as_messages})
+        response = chain.invoke({"context": contexts_formatter(contexts), "question": question, "chat_history": memory.buffer_as_messages})
+        st.write(response["answer"])
         # st.write(type(response),dir(response))
             
         # for s in chain.stream({"context": contexts_formatter(contexts), "question": question, "chat_history": memory.buffer_as_messages}):
@@ -525,7 +528,7 @@ if prompt := st.chat_input():
 
             #===== HIGHLIGHT =====#
             with st.expander("PDF Page"):
-                st.write("debug0")
+                # st.write("debug0")
                 pdf_document = fitz.open(uploaded_files[0])
                 source_text = response["source"]
                 if source_text:
